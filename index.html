@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ромашка с подсветкой</title>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+        #canvas-container { 
+            width: 100vw; 
+            height: 100vh; 
+        }
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 200px;
+        }
+        .color-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .color-option:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .color-preview {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+        h3 {
+            margin: 0 0 10px 0;
+            color: #ffd700;
+        }
+        .flicker-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .flicker-control input {
+            margin: 0;
+        }
+        .toggle-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 101;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div class="controls">
+        <h3>Ромашка</h3>
+        
+        <div class="color-option" data-color="classic">
+            <div class="color-preview" style="background: linear-gradient(45deg, white 50%, yellow 50%);"></div>
+            <span>Классическая</span>
+        </div>
+        
+        <div class="color-option" data-color="pink">
+            <div class="color-preview" style="background: linear-gradient(45deg, #FFB6C1 50%, yellow 50%);"></div>
+            <span>Розовая</span>
+        </div>
+        
+        <div class="color-option" data-color="blue">
+            <div class="color-preview" style="background: linear-gradient(45deg, #87CEEB 50%, #FFD700 50%);"></div>
+            <span>Голубая</span>
+        </div>
+        
+        <div class="color-option" data-color="purple">
+            <div class="color-preview" style="background: linear-gradient(45deg, #E6E6FA 50%, #FFD700 50%);"></div>
+            <span>Фиолетовая</span>
+        </div>
+        
+        <div class="flicker-control">
+            <input type="checkbox" id="flicker-toggle" checked>
+            <label for="flicker-toggle">Эффект мерцания</label>
+        </div>
+    </div>
+
+    <button class="toggle-btn" id="toggle-btn">☰</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        // Параметры ромашки
+        const params = {
+            petalNum: 20,        // Количество лепестков: 20 для ромашки
+            diameter: 80,
+            pLength: 100,
+            pSharpness: 0.3,     // Меньше заостренности для округлых лепестков
+            flowerHeight: 25,
+            curvature1: 0.9,
+            curvature2: 0.9,
+            bump: 1.5,
+            bumpNum: 8
+        };
+
+        let scene, camera, renderer, controls;
+        let flowerMesh, centerMesh;
+        let rows = 60, cols = 120;
+        
+        // Переменные для управления цветом и мерцанием
+        let currentColor = 'classic';
+        let flickerEnabled = true;
+        let flickerIntensity = 0;
+        let flickerSpeed = 0.05;
+        
+        function init() {
+            // Сцена
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            
+            // Камера
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.z = 400;
+            
+            // Рендерер
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            
+            // Управление камерой с автовращением
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+            
+            // Освещение для подсветки цветка
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+            
+            // Точечный свет для усиления свечения
+            const pointLight = new THREE.PointLight(0xffffff, 0.6, 1000);
+            pointLight.position.set(0, 0, 100);
+            scene.add(pointLight);
+            
+            // Создание ромашки
+            createDaisy();
+            
+            // Настройка элементов управления
+            setupControls();
+            
+            // Обработка изменения размера окна
+            window.addEventListener('resize', onWindowResize);
+            
+            // Запуск анимации
+            animate();
+        }
+        
+        function createDaisy() {
+            // Создаем геометрию для лепестков
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            const colors = [];
+            
+            const pNum = params.petalNum;
+            const fD = params.diameter;
+            const pLen = params.pLength;
+            const pSharp = params.pSharpness;
+            const fHeight = params.flowerHeight;
+            const curve1 = params.curvature1;
+            const curve2 = params.curvature2;
+            const b = params.bump;
+            const bNum = params.bumpNum;
+            
+            // Создаем вершины для ромашки
+            for(let theta = 0; theta < rows; theta++) {
+                for(let phi = 0; phi < cols; phi++) {
+                    const angle = phi * 2 * Math.PI / cols;
+                    const petalFactor = Math.abs(Math.sin(pNum * angle / 2));
+                    
+                    const r = (pLen * Math.pow(petalFactor, pSharp) + fD) * theta / rows;
+                    const x = r * Math.cos(angle);
+                    const y = r * Math.sin(angle);
+                    const z = vShape(fHeight, r/100, curve1, curve2, 1.5) - 150 +
+                        bumpiness(b, r/100, bNum, phi * 360/cols);
+                    
+                    vertices.push(x, y, z);
+                    
+                    // Цвет для ромашки: белые лепестки и желтая серединка
+                    let color;
+                    if (theta < rows * 0.3) {
+                        // Серединка - желтая
+                        switch(currentColor) {
+                            case 'pink':
+                            case 'blue':
+                            case 'purple':
+                                color = new THREE.Color(0xFFD700); // Золотистый для цветных вариантов
+                                break;
+                            default:
+                                color = new THREE.Color(0xFFFF00); // Ярко-желтый для классической
+                        }
+                    } else {
+                        // Лепестки
+                        switch(currentColor) {
+                            case 'pink':
+                                color = new THREE.Color(0xFFB6C1); // Розовый
+                                break;
+                            case 'blue':
+                                color = new THREE.Color(0x87CEEB); // Голубой
+                                break;
+                            case 'purple':
+                                color = new THREE.Color(0xE6E6FA); // Лавандовый
+                                break;
+                            default:
+                                color = new THREE.Color(0xFFFFFF); // Белый для классической
+                        }
+                    }
+                    
+                    // Добавляем легкий градиент
+                    const saturation = 0.9 - theta * (0.5 / rows);
+                    color.multiplyScalar(saturation);
+                    
+                    colors.push(color.r, color.g, color.b);
+                }
+            }
+            
+            // Создаем индексы для треугольников
+            const indices = [];
+            for(let theta = 0; theta < rows - 1; theta++) {
+                for(let phi = 0; phi < cols; phi++) {
+                    const nextPhi = (phi + 1) % cols;
+                    
+                    // Первый треугольник
+                    indices.push(theta * cols + phi);
+                    indices.push((theta + 1) * cols + phi);
+                    indices.push(theta * cols + nextPhi);
+                    
+                    // Второй треугольник
+                    indices.push(theta * cols + nextPhi);
+                    indices.push((theta + 1) * cols + phi);
+                    indices.push((theta + 1) * cols + nextPhi);
+                }
+            }
+            
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+            
+            // Материал с эффектом свечения
+            const material = new THREE.MeshPhongMaterial({
+                vertexColors: true,
+                side: THREE.DoubleSide,
+                shininess: 30,
+                emissive: 0x222200,
+                emissiveIntensity: 0.4,
+                transparent: true,
+                opacity: 0.95
+            });
+            
+            // Удаляем предыдущий цветок, если есть
+            if (flowerMesh) {
+                scene.remove(flowerMesh);
+            }
+            
+            flowerMesh = new THREE.Mesh(geometry, material);
+            scene.add(flowerMesh);
+            
+            // Добавляем объемную серединку
+            createCenter();
+        }
+        
+        function createCenter() {
+            // Удаляем предыдущую серединку, если есть
+            if (centerMesh) {
+                scene.remove(centerMesh);
+            }
+            
+            // Создаем геометрию для объемной серединки
+            const centerGeometry = new THREE.SphereGeometry(25, 32, 32);
+            
+            let centerColor;
+            switch(currentColor) {
+                case 'pink':
+                case 'blue':
+                case 'purple':
+                    centerColor = new THREE.Color(0xFFD700); // Золотистый для цветных вариантов
+                    break;
+                default:
+                    centerColor = new THREE.Color(0xFFFF00); // Ярко-желтый для классической
+            }
+            
+            const centerMaterial = new THREE.MeshPhongMaterial({
+                color: centerColor,
+                emissive: 0x333300,
+                emissiveIntensity: 0.3,
+                shininess: 50
+            });
+            
+            centerMesh = new THREE.Mesh(centerGeometry, centerMaterial);
+            centerMesh.position.z = -120;
+            scene.add(centerMesh);
+        }
+        
+        function setupControls() {
+            // Обработчики для выбора цвета
+            const colorOptions = document.querySelectorAll('.color-option');
+            colorOptions.forEach(option => {
+                option.addEventListener('click', function() {
+                    currentColor = this.getAttribute('data-color');
+                    createDaisy();
+                    
+                    // Обновляем выделение
+                    colorOptions.forEach(opt => opt.style.backgroundColor = 'transparent');
+                    this.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                });
+            });
+            
+            // Выбираем классическую ромашку по умолчанию
+            colorOptions[0].style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+            
+            // Обработчик для переключателя мерцания
+            const flickerToggle = document.getElementById('flicker-toggle');
+            flickerToggle.addEventListener('change', function() {
+                flickerEnabled = this.checked;
+            });
+            
+            // Обработчик для кнопки переключения меню
+            const toggleBtn = document.getElementById('toggle-btn');
+            const controlsPanel = document.querySelector('.controls');
+            toggleBtn.addEventListener('click', function() {
+                controlsPanel.classList.toggle('hidden');
+                toggleBtn.textContent = controlsPanel.classList.contains('hidden') ? '☰' : '✕';
+            });
+        }
+        
+        // Функции из оригинального кода
+        function vShape(A, r, a, b, c) {
+            return A * Math.pow(Math.E, -b * Math.pow(Math.abs(r), c)) * Math.pow(Math.abs(r), a);
+        }
+        
+        function bumpiness(A, r, f, angle) {
+            return 1 + A * Math.pow(r, 2) * Math.sin(f * angle * Math.PI/180);
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Автоматическое вращение камеры
+            controls.update();
+            
+            // Эффект мерцания
+            if (flickerEnabled && flowerMesh) {
+                flickerIntensity += flickerSpeed;
+                const flickerValue = 0.3 + 0.2 * Math.sin(flickerIntensity);
+                flowerMesh.material.emissiveIntensity = flickerValue;
+                centerMesh.material.emissiveIntensity = flickerValue * 0.7;
+                
+                // Легкое изменение прозрачности для эффекта мерцания
+                flowerMesh.material.opacity = 0.92 + 0.05 * Math.sin(flickerIntensity * 0.7);
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Запуск приложения
+        init();
+    </script>
+</body>
+</html>
